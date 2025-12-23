@@ -81,6 +81,14 @@ func (s *Server) handleConn(conn net.Conn) {
 }
 
 func (s *Server) handleRawMessage(rawMsg []byte) error {
+	cmd, err := parseCommand(string(rawMsg))
+	if err != nil {
+		return err
+	}
+	switch v := cmd.(type) {
+	case SetCommand:
+		slog.Info("somebody want to set a key in to the hash table", "key", v.key, "val", v.val)
+	}
 	return nil
 }
 
