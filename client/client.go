@@ -12,7 +12,7 @@ type Client struct {
 	addr string
 }
 
-func NewClient(addr string) *Client {
+func New(addr string) *Client {
 	return &Client{
 		addr: addr,
 	}
@@ -20,16 +20,32 @@ func NewClient(addr string) *Client {
 
 func (c *Client) Set(ctx context.Context, key string, val string) error {
 	conn, err := net.Dial("tcp", c.addr)
-	if err != nil{
+	if err != nil {
 		return err
 	}
-	var buf bytes.Buffer
-	wr := resp.NewWriter(&buf)
+	buf := &bytes.Buffer{}
+	wr := resp.NewWriter(buf)
 	wr.WriteArray([]resp.Value{
 		resp.StringValue("SET"), 
 		resp.StringValue(key), 
 		resp.StringValue(val),
 	})
-	_, err = conn.Write(buf.Bytes())
+ 	_, err = conn.Write(buf.Bytes())
+	buf.Reset()
+	return err
+}
+func (c *Client) Get(ctx context.Context, key string) error {
+	conn, err := net.Dial("tcp", c.addr)
+	if err != nil {
+		return err
+	}
+	buf := &bytes.Buffer{}
+	wr := resp.NewWriter(buf)
+	wr.WriteArray([]resp.Value{
+		resp.StringValue("GET"), 
+		resp.StringValue(key), 
+	})
+ 	_, err = conn.Write(buf.Bytes())
+	buf.Reset()
 	return err
 }
