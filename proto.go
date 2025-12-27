@@ -35,7 +35,7 @@ func parseCommand(raw string) (Command, error) {
 		if err != nil {
 			log.Fatal(err)
 		}
-		fmt.Printf("Read %s\n", v.Type())
+		// fmt.Printf("Read %s\n", v.Type())
 		if v.Type() == resp.Array {
 			for _, value := range v.Array() {
 				switch value.String() {
