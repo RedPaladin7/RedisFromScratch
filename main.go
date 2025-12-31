@@ -1,14 +1,11 @@
 package main
 
 import (
-	"context"
+	"flag"
 	"fmt"
 	"log"
 	"log/slog"
 	"net"
-	"time"
-
-	"github.com/RedPaladin7/RedisFromScratch/client"
 )
 
 const defaultListenAddr = ":5001"
@@ -18,7 +15,7 @@ type Config struct {
 }
 
 type Message struct {
-	data []byte
+	cmd Command 
 	peer *Peer
 }
 
@@ -27,6 +24,7 @@ type Server struct {
 	peers 		map[*Peer]bool
 	ln 			net.Listener
 	addPeerCh 	chan *Peer
+	delPeerCh 	chan *Peer
 	quitCh 		chan struct{}
 	msgCh 		chan Message
 	kv 			*KV
@@ -40,6 +38,7 @@ func NewServer(cfg Config) *Server {
 		Config: 	cfg,
 		peers: 		make(map[*Peer]bool),
 		addPeerCh: 	make(chan *Peer),
+		delPeerCh:  make(chan *Peer),
 		quitCh: 	make(chan struct{}),
 		msgCh: 		make(chan Message),
 		kv: 		NewKV(),	
@@ -53,7 +52,7 @@ func (s *Server) Start() error {
 	}
 	s.ln = ln
 	go s.loop()
-	slog.Info("sever running", "listenAddr", s.ListenAddr)
+	slog.Info("goredis sever running", "listenAddr", s.ListenAddr)
 	return s.acceptLoop()
 }
 
@@ -65,9 +64,11 @@ func (s *Server) loop() {
 				slog.Error("raw message error", "err", err)
 			}
 		case peer := <-s.addPeerCh:
+			slog.Info("new peer connected", "remoteAddr", peer.conn.RemoteAddr())
 			s.peers[peer] = true 
-		case <-s.quitCh:
-			return
+		case peer := <-s.delPeerCh:
+			slog.Info("peer disconnected", "remoteAddr", peer.conn.RemoteAddr())
+			delete(s.peers, peer)
 		} 
 	}
 }
@@ -84,7 +85,7 @@ func (s *Server) acceptLoop() error {
 }
 
 func (s *Server) handleConn(conn net.Conn) {
-	peer := NewPeer(conn, s.msgCh)
+	peer := NewPeer(conn, s.msgCh, s.delPeerCh)
 	s.addPeerCh <- peer
 	if err := peer.readLoop(); err != nil {
 		slog.Error("peer read error", "err", err, "remoteAddr", conn.RemoteAddr())
@@ -92,11 +93,7 @@ func (s *Server) handleConn(conn net.Conn) {
 }
 
 func (s *Server) handleMessage(msg Message) error {
-	cmd, err := parseCommand(string(msg.data))
-	if err != nil {
-		return err
-	}
-	switch v := cmd.(type) {
+	switch v := msg.cmd.(type) {
 	case SetCommand:
 		return s.kv.Set(v.key, v.val)
 	case GetCommand:
@@ -113,21 +110,10 @@ func (s *Server) handleMessage(msg Message) error {
 }
 
 func main() {
-	server := NewServer(Config{})
-	go func() {
-		log.Fatal(server.Start())
-	}()
-	time.Sleep(time.Second)
-	c := client.New("localhost:5001")
-	for i := 0; i < 5; i++ {
-		if err := c.Set(context.TODO(), fmt.Sprintf("foo_%d", i), fmt.Sprintf("bar_%d", i)); err != nil {
-			log.Fatal(err)
-		}
-		time.Sleep(time.Second)
-		val, err := c.Get(context.TODO(), fmt.Sprintf("foo_%d", i)) 
-		if err != nil {
-			log.Fatal(err)
-		}
-		fmt.Println(val)
-	}
+	listenAddr := flag.String("listenAddr", defaultListenAddr, "listen address of the go redis server")
+	flag.Parse()
+	server := NewServer(Config{
+		ListenAddr: *listenAddr,
+	})
+	log.Fatal(server.Start())
 }
